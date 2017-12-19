@@ -1,0 +1,175 @@
+"""When Can I Run.
+
+This script allows the computer to tell me when I'm least likely
+to get soaked today when running.
+
+Usage:
+    when_can_i_run.py -p <precip_threshold> --start-from=<start_from> --until=<until>
+    when_can_i_run.py -p <precip_threshold> --lunch-hours
+    when_can_i_run.py -p <precip_threshold> --all-day
+
+Options:
+    -h --help                   Show this screen
+    -p <precip_threshold>       The percentage of precip you are willing to run in.
+    --start-from=<start_from>   When you can start running.
+    --until=<until>             When you need to be finished running
+    --all-day                   I have all day. [Assumes 6AM -> 10PM]
+    --lunch-hours               I only want to run at lunch [Assumes lunch of 12 - 3PM]
+"""
+
+from docopt import docopt
+from lxml import html
+
+from operator import itemgetter
+
+import requests
+
+# the hour by hour for my home town.
+# TODO: We can probably make this more generic.
+WEBSITE = "https://weather.com/en-GB/weather/hourbyhour/l/UKXX3907:1:UK"
+
+
+def get_html(website):
+    """
+    Retrieves the website using a HTTP GET request.
+    Return the raw bytes of the response body.
+    In the case of a non-200, an exception will be raised.
+    """
+    response = requests.get(website)
+    response.raise_for_status()
+    return response.content
+
+
+def string_time_to_24_hour_integer(hour_str):
+    """
+    Converts a str time to number
+    e.g "12:30" -> 1230
+    """
+    return int(hour_str.replace(":", ""))
+
+
+def hour_integer_to_string_time(hour):
+    hour_str = str(hour)
+    return "{}:{}".format(hour_str[0:2],
+                          hour_str[2:])
+
+
+def get_hours_and_precip_from_tree(tree):
+    """
+    Retrieves the hour and the precip level from the lxml tree.
+    """
+    return list(
+        zip(
+            # Get every span with class dsx-date and extract the text.
+            map(
+                string_time_to_24_hour_integer,
+                tree.xpath('//span[@class="dsx-date"]/text()'),
+            ),
+            # Get every table row with the class precip.
+            # Within this there is a span with class "percent-symbol"
+            # which holds the text "%". Its parent span has the actual precip percent
+            # value. So we use ".." to get the parent node.
+            map(
+                int,
+                tree.xpath('//td[@class="precip"]/.//span[@class="percent-symbol"]/../text()')
+            )
+        )
+    )
+
+
+def validate_arguments(arguments):
+    precip_threshold = int(arguments["-p"])
+
+    if not (0 <= precip_threshold <= 100):
+        raise Exception("Invalid Precip Threshold %s", precip_threshold)
+
+    if arguments["--all-day"]:
+        start_from = 600
+        until = 2200
+    elif arguments["--lunch-hours"]:
+        start_from = 1200
+        until = 1500
+    elif arguments["--start-from"] and arguments["--until"]:
+        try:
+            start_from = int(arguments["--start-from"]) * 100
+            until = int(arguments["--until"]) * 100
+            if not (
+                0 <= start_from <= 2400
+                and
+                0 <= until <= 2400
+                and
+                start_from < until
+            ):
+                raise ValueError()
+        except ValueError:
+            raise Exception("Invalid start-from and until arguments: %s %s",
+                            arguments["--start-from"],
+                            arguments["--until"])
+    else:
+        raise Exception("Weird arguments %s", arguments)
+
+    return (precip_threshold, start_from, until)
+
+
+def filter_out_valid_times(precip_threshold, start_from, until, hours_and_precip):
+    """
+    Given a list of 2 item tuples (time, precip)
+    where time is something like 1100 or 1730
+    and precip is a percentage value e.g 0, 35
+
+    return the run times that make sense.
+
+    will return an hour block that makes sense (TODO: What about shorter/longer runs?)
+    """
+    return sorted(
+        filter(
+            lambda element: element[1] <= precip_threshold,
+            filter(
+                # remove any element that is not on the hour
+                lambda element: element[0]//100 == element[0]/100,
+                filter(
+                    # first remove any that are outside the time ranges
+                    lambda element: start_from <= element[0] < until,
+                    hours_and_precip
+                )
+            )
+        ),
+        key=itemgetter(1)
+    )
+
+
+def pretty_print_options(hours_and_precip):
+    if not hours_and_precip:
+        print("Too rainy. Put on a coat?")
+        return
+
+    print("The following hours are available (results are sorted by precip):")
+    for option in hours_and_precip:
+        print(
+            "{}: Expected Precip %: {}".format(
+                hour_integer_to_string_time(option[0]),
+                option[1]))
+
+
+def main(website):
+    arguments = docopt(__doc__)
+    precip_threshold, start_from, until = validate_arguments(arguments)
+    content = get_html(website)
+    tree = html.fromstring(content)
+    hours_and_precip = get_hours_and_precip_from_tree(tree)
+
+    if not hours_and_precip:
+        debug_filename = "/tmp/debug.html"
+        with open(debug_filename, "wb") as html_file:
+            html_file.write(content)
+            html_file.flush()
+
+        raise Exception("Could not be retrieved, open [%s] to debug", debug_filename)
+
+    hours_and_precip = filter_out_valid_times(precip_threshold, start_from, until, hours_and_precip)
+
+    return pretty_print_options(hours_and_precip)
+
+
+if __name__ == "__main__":
+    main(WEBSITE)
