@@ -27,7 +27,8 @@ import requests
 
 # the hour by hour for my home town.
 # TODO: We can probably make this more generic.
-WEBSITE = "https://weather.com/en-GB/weather/hourbyhour/l/UKXX3907:1:UK"
+#WEBSITE = "https://weather.com/en-GB/weather/hourbyhour/l/UKXX3907:1:UK"
+WEBSITE = "https://weather.com/en-GB/weather/hourbyhour/l/8ba25161aba9db03f800b6b54bc4e2c901ac1ce4d844283ec7d399a7c4fc6a6d"
 
 
 def get_html(website):
@@ -51,8 +52,16 @@ def string_time_to_24_hour_integer(hour_str):
 
 def hour_integer_to_string_time(hour):
     hour_str = str(hour)
-    return "{}:{}".format(hour_str[0:2],
-                          hour_str[2:])
+    if len(hour_str) == 4:
+        return "{}:{}".format(hour_str[0:2],
+                              hour_str[2:])
+    elif len(hour_str) == 3:
+        # 00:00 -> 09:00
+        return "{}:{}".format(hour_str[0],
+                              hour_str[1:])
+    else:
+        raise Exception("Unexpected hour str: {}".format(
+                        hour_str))
 
 
 def get_hours_and_precip_from_tree(tree):
