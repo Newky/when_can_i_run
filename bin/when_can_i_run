@@ -28,7 +28,10 @@ import requests
 # the hour by hour for my home town.
 # TODO: We can probably make this more generic.
 #WEBSITE = "https://weather.com/en-GB/weather/hourbyhour/l/UKXX3907:1:UK"
-WEBSITE = "https://weather.com/en-GB/weather/hourbyhour/l/8ba25161aba9db03f800b6b54bc4e2c901ac1ce4d844283ec7d399a7c4fc6a6d"
+WEBSITE = (
+    "https://weather.com/en-GB/weather/hourbyhour/l/"
+    "8ba25161aba9db03f800b6b54bc4e2c901ac1ce4d844283ec7d399a7c4fc6a6d"
+)
 
 
 def get_html(website):
@@ -81,7 +84,7 @@ def get_hours_and_precip_from_tree(tree):
             # value. So we use ".." to get the parent node.
             map(
                 int,
-                tree.xpath('//td[@class="precip"]/.//span[@class="percent-symbol"]/../text()')
+                tree.xpath('//td[@class="precip"]/.//span[text()="%"]/../text()')
             )
         )
     )
